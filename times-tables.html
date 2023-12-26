@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="en" color-mode="user">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Times Table Practice</title>
+    <script defer src="https://cdn.jsdelivr.net/npm/@alpinejs/persist@3.x.x/dist/cdn.min.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <link rel="stylesheet" href="https://unpkg.com/mvp.css">
+    <style>
+        :root {
+            --color-success: #009000;
+            --color-error: #e70d0d;
+        }
+
+        .heatmap {
+            display: flex;
+            flex-direction: column;
+            width: 600px;
+            text-align: center;
+        }
+
+        .heatmap-row {
+            display: flex;
+            flex-grow: 1;
+        }
+
+        .heatmap-cell {
+            flex-grow: 1;
+            border: 1px solid #ddd;
+            width: 3rem;
+            height: 3rem;
+        }
+    </style>
+</head>
+
+<body x-data="timesTableApp()" x-init="init()">
+    <header>
+        <nav>
+            <ul>
+            </ul>
+        </nav>
+
+        <h1>Times Table Practice</h1>
+    </header>
+    <main>
+        <div>
+            <button x-show="!started" @click="startGame()">Start</button>
+            <div x-show="started">
+                <div>
+                    <h2><strong>Question:</strong> <span x-text="`${a} ${op} ${b}`"></span></h2>
+                    <input type="number" x-model="userAnswer" @keyup.enter="submitAnswer()" />
+                    <button @click="submitAnswer()">Submit</button>
+                </div>
+            </div>
+        </div>
+        <div id="info_panel">
+            <h2>Error Rates</h2>
+            <div class="heatmap">
+                <template x-for="row in 10" :key="row">
+                    <div class="heatmap-row">
+                        <template x-for="col in 10" :key="col">
+                            <div class="heatmap-cell" :style="getHeatmapCellStyle('correctPercent', row, col)"
+                                x-text="`${row} x ${col}`">
+                            </div>
+                        </template>
+                    </div>
+                </template>
+            </div>
+
+            <h2>Response Times</h2>
+            <div class="heatmap">
+                <template x-for="row in 10" :key="row">
+                    <div class="heatmap-row">
+                        <template x-for="col in 10" :key="col">
+                            <div class="heatmap-cell" :style="getHeatmapCellStyle('normalizedResponseTime', row, col)"
+                                x-text="`${row} x ${col}\n${calcProblemStats(row,'*', col).responseTime}s`">
+                            </div>
+                        </template>
+                    </div>
+                </template>
+            </div>
+
+
+            <div>
+                <h2>Response Times</h2>
+                <div style="width: 75%;">
+                    <canvas id="polarAreaChart"></canvas>
+                </div>
+
+                <!-- <div style="display: flex; align-items: flex-end; gap: 10px; padding: 3rem 0; height: 150px;">
+                    <template x-for="problem in Object.keys(stats.responseTimesPerProblem)" :key="problem">
+                        <div style="flex: 1; text-align: center;"
+                            :style="{height: `${Math.max((1 - calcProblemStats(problem).normalizedResponseTime) * 100, 3)}%`}">
+                            <div x-text="problem"
+                                style="height: 100%; background: var(--color-link); color: var(--color-bg); width: 50%; margin: 0 auto; border-radius: 5px;">
+                            </div>
+                            <div style="margin-top: 1rem;" x-text="`${calcProblemStats(problem).responseTime}s`"></div>
+                        </div>
+                    </template>
+                </div>
+            </div> -->
+
+
+                <div>
+                    <h2>Overall Stats</h2>
+                    <p>Correct: <span x-text="stats.correctSubmissions.length"></span></p>
+                    <p>Incorrect: <span x-text="stats.incorrectSubmissions.length"></span></p>
+                    <p>Accuracy: <span x-text="stats.correctPercent.toFixed(2)"></span>%</p>
+                    <p>Average Response Time: <span x-text="stats.averageResponseTimeMs.toFixed(0)"></span>ms</p>
+                </div>
+
+                <details open>
+                    <summary>Events</summary>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Time</th>
+                                <th>Event</th>
+                                <th>Problem</th>
+                                <th>User Answer</th>
+                                <th>Response Time</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <template x-for="event in events" :key="event.uuid">
+                                <tr>
+                                    <td x-text="new Date(event.createdAt).toISOString()"></td>
+                                    <td x-text="event.type"></td>
+                                    <td x-text="event.a + event.op + event.b"></td>
+                                    <td :style='{ color: event.isCorrect ? "var(--color-success)" : "var(--color-error)" }'
+                                        x-text="event.userAnswer"></td>
+                                    <td x-text="formatMsAsS(event.responseTimeMs)"></td>
+                                </tr>
+                            </template>
+                        </tbody>
+                    </table>
+                </details>
+            </div>
+    </main>
+
+    <script>
+        function withLRUCache(store, key, fn, maxSize = 100) {
+            // Ensure the key is a string, throw an error otherwise
+            // make sure the key is a string so iteration is via insertion order
+            if (typeof key !== 'string') {
+                throw new Error('withLRUCache: Key must be a string to ensure proper cache behavior.');
+            }
+
+            // if the key is already in the cache, move it to the "front"
+            if (store[key]) {
+                // kinda hacky since it relies on the fact that ecmascript's Object.keys
+                // returns an iterator based on insertion order for string keys
+                const value = store[key];
+                delete store[key];
+                store[key] = value;
+                return value;
+            }
+            const res = fn(); // cache miss, compute the value
+
+            // if the cache is full, remove the last item
+            const keys = Object.keys(store)
+            if (keys.length >= maxSize) {
+                const lastKey = keys[keys.length - 1];
+                delete store[lastKey];
+            }
+            store[key] = res;
+            return res;
+        }
+
+        function formatMsAsS(ms) {
+            const res = (ms / 1000)
+            return Number.isNaN(res) ? undefined : res.toFixed(2) + "s";
+        }
+
+        function evaluate(a, b, op) {
+            switch (op) {
+                case '+':
+                    return a + b;
+                case '-':
+                    return a - b;
+                case '*':
+                    return a * b;
+                case '/':
+                    return a / b;
+            }
+        }
+
+        function timesTableApp() {
+            return {
+                chart: null,
+                userAnswer: '',
+                started: false,
+                problemsInSet: Alpine.$persist(10),
+                events: Alpine.$persist([]),
+
+                _cache: {},
+                get currentProblem() {
+                    return withLRUCache(this._cache, `currentProblem-${this.events.length}`, () => {
+                        // find the last event that was a GENERATE event and return it
+                        for (let i = this.events.length - 1; i >= 0; i--) {
+                            const event = this.events[i];
+                            if (event.type === "GENERATE") {
+                                return event;
+                            }
+                        }
+                        return null;
+                    })
+                },
+
+                get a() { return this.currentProblem?.a },
+                get b() { return this.currentProblem?.b },
+                get op() { return this.currentProblem?.op },
+
+                problemsGeneratedCache: {},
+                get problemsGenerated() {
+                    return withLRUCache(this._cache, `problemsGenerated-${this.events.length}`, () => {
+                        return this.events.filter(event => event.type === "GENERATE");;
+                    })
+                },
+
+                statsCache: {},
+                get stats() {
+                    return withLRUCache(this._cache, `stats-${this.events.length}`, () => {
+                        const correctSubmissions = this.events.filter(event => event.type === "SUBMIT" && event.isCorrect);
+                        const incorrectSubmissions = this.events.filter(event => event.type === "SUBMIT" && !event.isCorrect);
+                        const totalSubmissions = correctSubmissions.length + incorrectSubmissions.length;
+                        const correctPercent = totalSubmissions === 0 ? 0 : correctSubmissions.length / totalSubmissions * 100;
+                        const averageResponseTimeMs = correctSubmissions.reduce((sum, event) => sum + event.responseTimeMs, 0) / correctSubmissions.length;
+
+                        // calculate average response time per problem
+                        const responseTimesPerProblem = this.events.reduce((m, event) => {
+                            if (event.type === "GENERATE") {
+                                return { ...m, [event.a + event.op + event.b]: { submissions: [] } }
+                            } else if (event.type === "SUBMIT") {
+                                return { ...m, [event.a + event.op + event.b]: { submissions: [...m[event.a + event.op + event.b].submissions, event] } }
+                            } else {
+                                return m
+                            }
+                        }, {});
+
+                        const bestResponseTime = Object.keys(responseTimesPerProblem).reduce((best, problem) => {
+                            const submissions = responseTimesPerProblem[problem].submissions;
+                            let average = submissions.reduce((sum, event) => sum + event.responseTimeMs, 0) / submissions.length;
+                            // use 2hrs as a default
+                            average = Number.isNaN(average) ? 7_200_000 : average
+                            // NOTE: i know its bad but i'm mutating the object here b/c js sucks and its easier
+                            responseTimesPerProblem[problem] = { ...responseTimesPerProblem[problem], average };
+
+                            return Math.min(best, average);
+                        }, 7_200_000);
+
+                        const res = {
+                            correctSubmissions,
+                            incorrectSubmissions,
+                            totalSubmissions,
+                            correctPercent,
+                            averageResponseTimeMs,
+                            responseTimesPerProblem,
+                            bestResponseTime,
+                        };
+                        return res;
+                    })
+                },
+
+                init() {
+                    const ctx = document.getElementById('polarAreaChart').getContext('2d');
+                    const getChartConfig = () => {
+                        return {
+                            type: 'polarArea',
+                            data: {
+                                labels: Object.keys(this.stats.responseTimesPerProblem),
+                                datasets: [{
+                                    label: 'Response Times',
+                                    data: Object.values(this.stats.responseTimesPerProblem).map(problem => problem.average),
+                                    // Add your backgroundColors, borderColors, etc.
+                                }]
+                            },
+                            options: {
+                                // animation: false,
+                                // aspectRatio: 1,
+                                plugins: {
+                                    legend: {
+                                        display: false,
+                                    },
+                                },
+                            }
+                        }
+                    }
+                    this.chart = this.chart ?? new Chart(ctx, getChartConfig());
+                    window.appEvents = this.events;
+
+                    this.$watch('events', () => {
+                        const responseTimesPerProblem = this.stats.responseTimesPerProblem
+                        console.log("updating chart", Date.now())
+                        const labels = Object.keys(responseTimesPerProblem);
+                        const d = Object.values(responseTimesPerProblem).map(problem => problem.average)
+                        this.chart.data.labels.forEach((it, i) => this.chart.data.labels[i] = labels[i])
+                        this.chart.data.datasets[0].data.forEach((it, i) => this.chart.data.datasets[0].data[i] = d[i])
+
+                        window.appEvents = this.events;
+                        // TODO: for some reason this is throwing an error and not updating the chart
+                        // this.chart.update();
+                    });
+                },
+
+                getHeatmapCellStyle(stat, row, col) {
+                    const problem = this.calcProblemStats(`${row}*${col}`)
+                    let metric
+                    if (stat === 'correctPercent') {
+                        metric = 1 - (problem?.correctPercent ?? 100) * 0.01
+                    } else {
+                        metric = 0.5 - (problem?.normalizedResponseTime ?? 0.5)
+                    }
+                    // Use HSL for smoother color transitions
+                    const hue = (metric) * 120; // 0 (red) to 120 (green)
+                    const saturation = 70; // Full saturation
+                    const lightness = 50; // Normal lightness
+                    const backgroundColor = `hsl(${90 - hue}, ${saturation}%, ${lightness}%)`;
+
+                    return `background-color: ${backgroundColor};`;
+                },
+
+                calcProblemStats(problem, op, b) {
+                    if (op !== undefined && b != undefined) {
+                        return this.calcProblemStats(`${problem}${op}${b}`);
+                    }
+                    const { bestResponseTime, responseTimesPerProblem } = this.stats
+                    const { submissions, average } = responseTimesPerProblem[problem] ?? { submissions: [], average: 0 };
+                    const correct = submissions.filter(event => event.isCorrect).length;
+                    const incorrect = submissions.filter(event => !event.isCorrect).length;
+                    const correctPercent = correct / submissions.length * 100;
+                    return {
+                        normalizedResponseTime: Number.isNaN(average) ? 0 : bestResponseTime / average,
+                        // convert to seconds and make it pretty
+                        responseTime: (average / 1000).toFixed(2),
+                        correct,
+                        incorrect,
+                        correctPercent,
+                    };
+                },
+
+                startGame() {
+                    alert("starting game in... 3!")
+                    alert("starting game in... 2!")
+                    alert("starting game in... 1!")
+                    alert("go!!!!!!")
+                    this.started = true;
+                    this.generateProblem();
+                },
+                generateProblem() {
+                    if (this.problemsGenerated.length >= this.problemsInSet) {
+                        this.started = false;
+                        this.problemsInSet += 10;
+                        alert("You've completed the set! Congrats!")
+                        return;
+                    }
+                    this.userAnswer = '';
+                    const event = {
+                        uuid: crypto.randomUUID(),
+                        type: "GENERATE",
+                        a: Math.floor(Math.random() * 10) + 1,
+                        b: Math.floor(Math.random() * 10) + 1,
+                        op: "*",
+                        createdAt: Date.now(),
+                    };
+                    this.events.push(event);
+                },
+                submitAnswer() {
+                    const currentProblem = this.currentProblem;
+                    const createdAt = Date.now()
+                    const correctAnswer = evaluate(this.a, this.b, this.op);
+                    const userAnswer = parseInt(this.userAnswer)
+                    const isCorrect = userAnswer === correctAnswer;
+
+                    const event = {
+                        uuid: crypto.randomUUID(),
+                        type: "SUBMIT",
+                        isCorrect,
+                        correctAnswer,
+                        userAnswer,
+                        a: currentProblem.a,
+                        b: currentProblem.b,
+                        op: currentProblem.op,
+                        createdAt,
+                        responseTimeMs: createdAt - currentProblem.createdAt,
+                    };
+
+                    this.events.push(event);
+
+                    if (isCorrect) {
+                        this.generateProblem();
+                    } else {
+                        alert('Wrong answer, try again!');
+                    }
+                },
+                eventString(event) {
+                    return `${new Date(event.createdAt).toISOString()}: ${event.type} ${event.a} ${event.op} ${event.b} ${(event?.responseTimeMs && event.responseTimeMs / 1000 + "s") ?? ""}`;
+                }
+            };
+        }
+    </script>
+</body>
+
+</html>
