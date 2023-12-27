@@ -56,61 +56,23 @@
             </div>
         </div>
         <div id="info_panel">
-            <h2>Error Rates</h2>
-            <div class="heatmap">
-                <template x-for="row in 10" :key="row">
-                    <div class="heatmap-row">
-                        <template x-for="col in 10" :key="col">
-                            <div class="heatmap-cell" :style="getHeatmapCellStyle('correctPercent', row, col)"
-                                x-text="`${row} x ${col}`">
-                            </div>
-                        </template>
-                    </div>
-                </template>
-            </div>
-
-            <h2>Response Times</h2>
-            <div class="heatmap">
-                <template x-for="row in 10" :key="row">
-                    <div class="heatmap-row">
-                        <template x-for="col in 10" :key="col">
-                            <div class="heatmap-cell" :style="getHeatmapCellStyle('normalizedResponseTime', row, col)"
-                                x-text="`${row} x ${col}\n${calcProblemStats(row,'*', col).responseTime}s`">
-                            </div>
-                        </template>
-                    </div>
-                </template>
-            </div>
-
-
             <div>
-                <h2>Response Times</h2>
-                <div id="myplot"></div>
-                <div style="width: 75%;">
-                    <canvas id="polarAreaChart"></canvas>
-                </div>
-
-                <!-- <div style="display: flex; align-items: flex-end; gap: 10px; padding: 3rem 0; height: 150px;">
-                    <template x-for="problem in Object.keys(stats.responseTimesPerProblem)" :key="problem">
-                        <div style="flex: 1; text-align: center;"
-                            :style="{height: `${Math.max((1 - calcProblemStats(problem).normalizedResponseTime) * 100, 3)}%`}">
-                            <div x-text="problem"
-                                style="height: 100%; background: var(--color-link); color: var(--color-bg); width: 50%; margin: 0 auto; border-radius: 5px;">
-                            </div>
-                            <div style="margin-top: 1rem;" x-text="`${calcProblemStats(problem).responseTime}s`"></div>
-                        </div>
-                    </template>
-                </div>
-            </div> -->
-
-
                 <div>
                     <h2>Overall Stats</h2>
                     <p>Correct: <span x-text="stats.correctSubmissions.length"></span></p>
                     <p>Incorrect: <span x-text="stats.incorrectSubmissions.length"></span></p>
                     <p>Accuracy: <span x-text="stats.correctPercent.toFixed(2)"></span>%</p>
-                    <p>Average Response Time: <span x-text="stats.averageResponseTimeMs.toFixed(0)"></span>ms</p>
+                    <p>Average Response Time: <span x-text="(stats.averageResponseTimeMs / 1000).toFixed(2)"></span>s</p>
                 </div>
+                <h2>Stats</h2>
+                <select x-model="heatmapView">
+                    <option value="responseTime">Select an option</option>
+                    <option value="responseTime">Response Time</option>
+                    <option value="correctPercent">Percent Correct</option>
+                    <option value="timesSeen">Times Seen</option>
+                </select>
+                <div id="heatmapPlot"></div>
+                <div id="timeseriesPlot"></div>
 
                 <details open>
                     <summary>Events</summary>
@@ -197,13 +159,13 @@
         function timesTableApp() {
             return {
                 chart: null,
-                heatmapView: "correctPercent", // correctPercent, responseTime, timesSeen
+                heatmapView: "responseTime", // correctPercent, responseTime, timesSeen
                 userAnswer: '',
                 started: false,
                 problemsInSet: Alpine.$persist(10),
                 events: Alpine.$persist([]),
-
                 _cache: {},
+
                 get currentProblem() {
                     return withLRUCache(this._cache, `currentProblem-${this.events.length}`, () => {
                         // find the last event that was a GENERATE event and return it
@@ -239,10 +201,17 @@
                         const responseTimesPerProblem = this.events.reduce((m, event) => {
                             if (event.type === "GENERATE") {
                                 const name = event.a + event.op + event.b
-                                return { ...m, [name]: { name, submissions: [] } }
+                                if (m[name]) {
+                                    const nxt = { ...m[name] }
+                                    nxt.timesSeen += 1
+                                    return { ...m, [name]: nxt }
+                                }
+                                return { ...m, [name]: { name, submissions: [], timesSeen: 1 } }
                             } else if (event.type === "SUBMIT") {
                                 const name = event.a + event.op + event.b
-                                return { ...m, [name]: { name, submissions: [...m[name].submissions, event] } }
+                                const nxt = { ...m[name] }
+                                nxt.submissions.push(event)
+                                return { ...m, [name]: nxt }
                             } else {
                                 return m
                             }
@@ -272,94 +241,8 @@
                     })
                 },
 
-                init() {
-                    // const ctx = document.getElementById('polarAreaChart').getContext('2d');
-                    // const getChartConfig = () => {
-                    //     return {
-                    //         type: 'polarArea',
-                    //         data: {
-                    //             labels: Object.keys(this.stats.responseTimesPerProblem),
-                    //             datasets: [{
-                    //                 label: 'Response Times',
-                    //                 data: Object.values(this.stats.responseTimesPerProblem).map(problem => problem.average),
-                    //                 // Add your backgroundColors, borderColors, etc.
-                    //             }]
-                    //         },
-                    //         options: {
-                    //             // animation: false,
-                    //             // aspectRatio: 1,
-                    //             plugins: {
-                    //                 legend: {
-                    //                     display: false,
-                    //                 },
-                    //             },
-                    //         }
-                    //     }
-                    // }
-                    // this.chart = this.chart ?? new Chart(ctx, getChartConfig());
-                    window.appEvents = this.events;
-
-                    // // radial plot attempt, not working
-                    // const radialPlot = () => {
-                    //     const d = Object.values(this.stats.responseTimesPerProblem)
-                    //     // .map(problem => (problem.average))
-                    //     // debugger
-                    //     return Plot.plot({
-                    //         projection: {
-                    //             type: "azimuthal-equidistant",
-                    //             rotate: [0, -90],
-                    //         },
-                    //         marks: [
-                    //             Plot.sphere(),
-                    //             Plot.graticule({ strokeOpacity: 0.2 }),
-                    //             Plot.area(d, { x1: 0, x2: (d) => d.name * 180 , y1: (d) => d.average * -180, y2: (d) => d.average * 180 }),
-                    //         ]
-                    //     })
-                    // }
-
+                configureTimeSeriesPlot(elId) {
                     const getPlot = () => {
-                        const computeText = (d) => {
-                            switch (this.heatmapView) {
-                                case "correctPercent":
-                                    return d.correctPercent ? d.correctPercent.toFixed(1) + "%" : undefined
-                                case "responseTime":
-                                    return d.responseTime ? d.responseTime + "s" : undefined
-                                default:
-                                    return d[this.heatmapView] ?? undefined
-                            }
-                        }
-                        const problems = Array(10).fill(0)
-                            .flatMap((_, i) => Array(10).fill(0).map((_, j) => ({ a: i + 1, b: j + 1 })))
-                            .map(it => {
-                                const stats = this.calcProblemStats(`${it.a}*${it.b}`)
-                                return { ...it, ...stats }
-                            })
-
-                        // debugger
-                        return Plot.plot({
-                            padding: 0,
-                            aspectRatio: 1,
-                            x: { axis: "top" },
-                            color: { scheme: "RdYlGn", reverse: this.heatmapView === "responseTime", pivot: 3 },
-                            marks: [
-                                Plot.frame(),
-                                Plot.cell(problems, { x: "a", stroke: "black", y: "b", fill: this.heatmapView }),
-                                Plot.text(problems, { x: "a", fill: "black", y: "b", text: (d) => computeText(d) }),
-                                Plot.tip(problems, Plot.pointer({
-                                    filter: (d) => d.correctPercent, x: "a", y: "b",
-                                    channels: {
-                                        correctPercent: (d) => d.correctPercent + "%",
-                                        responseTime: (d) => d.responseTime + "s",
-                                        timesSeen: "timesSeen",
-                                    },
-                                    fill: "black"
-                                })),
-                            ]
-                        })
-                    }
-
-                    // timeSeriesResponseTimesPlot
-                    const getPlot2 = () => {
                         const data = Object.values(this.stats.responseTimesPerProblem).flatMap(problem =>
                             problem.submissions.map(s => ({
                                 name: problem.name, ...s, createdAt: new Date(s.createdAt), responseTimeS: s.responseTimeMs / 1000,
@@ -382,24 +265,93 @@
                             ]
                         })
                     }
-                    const div = document.getElementById("myplot");
+                    const div = document.getElementById(elId);
                     div?.firstChild?.remove();
                     div.append(getPlot());
 
-                    this.$watch('events', () => {
-                        const responseTimesPerProblem = this.stats.responseTimesPerProblem
-                        const labels = Object.keys(responseTimesPerProblem);
-                        const d = Object.values(responseTimesPerProblem).map(problem => problem.average)
-
+                    return () => {
                         div?.firstChild?.remove();
                         div?.append(getPlot())
+                    }
+                },
 
-                        // this.chart.data.labels.forEach((it, i) => this.chart.data.labels[i] = labels[i])
-                        // this.chart.data.datasets[0].data.forEach((it, i) => this.chart.data.datasets[0].data[i] = d[i])
+                configureHeatmapPlot(elId) {
+                    const getPlot = () => {
+                        const computeColorOptions = () => {
+                            switch (this.heatmapView) {
+                                case "correctPercent":
+                                    return { scheme: "RdYlGn", reverse: false, pivot: 75 }
+                                case "responseTime":
+                                    return { scheme: "RdYlGn", reverse: true, pivot: 3 }
+                                default:
+                                    return { scheme: "rdylbu", reverse: false }
+                            }
+                        }
 
+                        const computeText = (d) => {
+                            switch (this.heatmapView) {
+                                case "correctPercent":
+                                    return d.correctPercent ? d.correctPercent.toFixed(1) + "%" : undefined
+                                case "responseTime":
+                                    return d.responseTime ? d.responseTime + "s" : undefined
+                                default:
+                                    return d[this.heatmapView] ?? undefined
+                            }
+                        }
+                        const problems = Array(10).fill(0)
+                            .flatMap((_, i) => Array(10).fill(0).map((_, j) => ({ a: i + 1, b: j + 1 })))
+                            .map(it => {
+                                const stats = this.calcProblemStats(`${it.a}*${it.b}`)
+                                return { ...it, ...stats }
+                            })
+
+                        return Plot.plot({
+                            padding: 0,
+                            aspectRatio: 1,
+                            x: { axis: "top" },
+                            color: computeColorOptions(),
+                            marks: [
+                                Plot.frame(),
+                                Plot.cell(problems, { x: "a", stroke: "black", y: "b", fill: this.heatmapView }),
+                                Plot.text(problems, { x: "a", fill: "black", y: "b", text: (d) => computeText(d) }),
+                                Plot.tip(problems, Plot.pointer({
+                                    x: "a", y: "b",
+                                    filter: (d) => d.timesSeen > 0,
+                                    channels: {
+                                        correctPercent: (d) => d.correctPercent + "%",
+                                        responseTime: (d) => d.responseTime + "s",
+                                        timesSeen: "timesSeen",
+                                    },
+                                    fill: "black"
+                                })),
+                            ]
+                        })
+                    }
+
+                    const div = document.getElementById(elId);
+                    div?.firstChild?.remove();
+                    div.append(getPlot());
+
+                    return () => {
+                        div?.firstChild?.remove();
+                        div?.append(getPlot())
+                    }
+                },
+
+                init() {
+                    window.appEvents = this.events;
+                    const updateHeatmapFn = this.configureHeatmapPlot("heatmapPlot");
+                    const updateTimeseriesFn = this.configureTimeSeriesPlot("timeseriesPlot")
+
+                    this.$watch('heatmapView', () => {
+                        updateHeatmapFn();
+                        updateTimeseriesFn();
+                    });
+
+                    this.$watch('events', () => {
+                        updateHeatmapFn();
+                        updateTimeseriesFn();
                         window.appEvents = this.events;
-                        // TODO: for some reason this is throwing an error and not updating the chart
-                        // this.chart.update();
                     });
                 },
 
@@ -425,7 +377,7 @@
                         return this.calcProblemStats(`${problem}${op}${b}`);
                     }
                     const { bestResponseTime, responseTimesPerProblem } = this.stats
-                    const { submissions, average } = responseTimesPerProblem[problem] ?? { submissions: [], average: 0 };
+                    const { submissions, average, timesSeen } = responseTimesPerProblem[problem] ?? { submissions: [], average: 0, timesSeen: 0 };
                     const correct = submissions.filter(event => event.isCorrect).length;
                     const incorrect = submissions.filter(event => !event.isCorrect).length;
                     const correctPercent = correct / submissions.length * 100;
@@ -435,7 +387,7 @@
                         responseTime: Math.round((average / 1000) * 1e2) / 1e2,
                         correct,
                         incorrect,
-                        timesSeen: submissions.length,
+                        timesSeen,
                         correctPercent,
                     };
                 },
