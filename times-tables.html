@@ -5,8 +5,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Times Table Practice</title>
-    <script defer src="https://cdn.jsdelivr.net/npm/@alpinejs/persist@3.x.x/dist/cdn.min.js"></script>
-    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
     <link rel="stylesheet" href="https://unpkg.com/mvp.css">
@@ -37,7 +35,7 @@
     </style>
 </head>
 
-<body x-data="timesTableApp()" x-init="init()">
+<body x-data="timesTableApp">
     <header>
         <nav>
             <ul>
@@ -87,6 +85,7 @@
 
             <div>
                 <h2>Response Times</h2>
+                <div id="myplot"></div>
                 <div style="width: 75%;">
                     <canvas id="polarAreaChart"></canvas>
                 </div>
@@ -142,7 +141,13 @@
             </div>
     </main>
 
-    <script>
+    <script type="module">
+        import Alpine from 'https://cdn.jsdelivr.net/npm/alpinejs@3.13.3/+esm'
+        import persist from 'https://cdn.jsdelivr.net/npm/@alpinejs/persist@3.13.3/+esm'
+        import * as Plot from "https://cdn.jsdelivr.net/npm/@observablehq/plot@0.6/+esm";
+        window.Alpine = Alpine
+        Alpine.plugin(persist)
+
         function withLRUCache(store, key, fn, maxSize = 100) {
             // Ensure the key is a string, throw an error otherwise
             // make sure the key is a string so iteration is via insertion order
@@ -192,6 +197,7 @@
         function timesTableApp() {
             return {
                 chart: null,
+                heatmapView: "correctPercent", // correctPercent, responseTime, timesSeen
                 userAnswer: '',
                 started: false,
                 problemsInSet: Alpine.$persist(10),
@@ -215,14 +221,12 @@
                 get b() { return this.currentProblem?.b },
                 get op() { return this.currentProblem?.op },
 
-                problemsGeneratedCache: {},
                 get problemsGenerated() {
                     return withLRUCache(this._cache, `problemsGenerated-${this.events.length}`, () => {
                         return this.events.filter(event => event.type === "GENERATE");;
                     })
                 },
 
-                statsCache: {},
                 get stats() {
                     return withLRUCache(this._cache, `stats-${this.events.length}`, () => {
                         const correctSubmissions = this.events.filter(event => event.type === "SUBMIT" && event.isCorrect);
@@ -234,9 +238,11 @@
                         // calculate average response time per problem
                         const responseTimesPerProblem = this.events.reduce((m, event) => {
                             if (event.type === "GENERATE") {
-                                return { ...m, [event.a + event.op + event.b]: { submissions: [] } }
+                                const name = event.a + event.op + event.b
+                                return { ...m, [name]: { name, submissions: [] } }
                             } else if (event.type === "SUBMIT") {
-                                return { ...m, [event.a + event.op + event.b]: { submissions: [...m[event.a + event.op + event.b].submissions, event] } }
+                                const name = event.a + event.op + event.b
+                                return { ...m, [name]: { name, submissions: [...m[name].submissions, event] } }
                             } else {
                                 return m
                             }
@@ -267,39 +273,129 @@
                 },
 
                 init() {
-                    const ctx = document.getElementById('polarAreaChart').getContext('2d');
-                    const getChartConfig = () => {
-                        return {
-                            type: 'polarArea',
-                            data: {
-                                labels: Object.keys(this.stats.responseTimesPerProblem),
-                                datasets: [{
-                                    label: 'Response Times',
-                                    data: Object.values(this.stats.responseTimesPerProblem).map(problem => problem.average),
-                                    // Add your backgroundColors, borderColors, etc.
-                                }]
-                            },
-                            options: {
-                                // animation: false,
-                                // aspectRatio: 1,
-                                plugins: {
-                                    legend: {
-                                        display: false,
-                                    },
-                                },
+                    // const ctx = document.getElementById('polarAreaChart').getContext('2d');
+                    // const getChartConfig = () => {
+                    //     return {
+                    //         type: 'polarArea',
+                    //         data: {
+                    //             labels: Object.keys(this.stats.responseTimesPerProblem),
+                    //             datasets: [{
+                    //                 label: 'Response Times',
+                    //                 data: Object.values(this.stats.responseTimesPerProblem).map(problem => problem.average),
+                    //                 // Add your backgroundColors, borderColors, etc.
+                    //             }]
+                    //         },
+                    //         options: {
+                    //             // animation: false,
+                    //             // aspectRatio: 1,
+                    //             plugins: {
+                    //                 legend: {
+                    //                     display: false,
+                    //                 },
+                    //             },
+                    //         }
+                    //     }
+                    // }
+                    // this.chart = this.chart ?? new Chart(ctx, getChartConfig());
+                    window.appEvents = this.events;
+
+                    // // radial plot attempt, not working
+                    // const radialPlot = () => {
+                    //     const d = Object.values(this.stats.responseTimesPerProblem)
+                    //     // .map(problem => (problem.average))
+                    //     // debugger
+                    //     return Plot.plot({
+                    //         projection: {
+                    //             type: "azimuthal-equidistant",
+                    //             rotate: [0, -90],
+                    //         },
+                    //         marks: [
+                    //             Plot.sphere(),
+                    //             Plot.graticule({ strokeOpacity: 0.2 }),
+                    //             Plot.area(d, { x1: 0, x2: (d) => d.name * 180 , y1: (d) => d.average * -180, y2: (d) => d.average * 180 }),
+                    //         ]
+                    //     })
+                    // }
+
+                    const getPlot = () => {
+                        const computeText = (d) => {
+                            switch (this.heatmapView) {
+                                case "correctPercent":
+                                    return d.correctPercent ? d.correctPercent.toFixed(1) + "%" : undefined
+                                case "responseTime":
+                                    return d.responseTime ? d.responseTime + "s" : undefined
+                                default:
+                                    return d[this.heatmapView] ?? undefined
                             }
                         }
+                        const problems = Array(10).fill(0)
+                            .flatMap((_, i) => Array(10).fill(0).map((_, j) => ({ a: i + 1, b: j + 1 })))
+                            .map(it => {
+                                const stats = this.calcProblemStats(`${it.a}*${it.b}`)
+                                return { ...it, ...stats }
+                            })
+
+                        // debugger
+                        return Plot.plot({
+                            padding: 0,
+                            aspectRatio: 1,
+                            x: { axis: "top" },
+                            color: { scheme: "RdYlGn", reverse: this.heatmapView === "responseTime", pivot: 3 },
+                            marks: [
+                                Plot.frame(),
+                                Plot.cell(problems, { x: "a", stroke: "black", y: "b", fill: this.heatmapView }),
+                                Plot.text(problems, { x: "a", fill: "black", y: "b", text: (d) => computeText(d) }),
+                                Plot.tip(problems, Plot.pointer({
+                                    filter: (d) => d.correctPercent, x: "a", y: "b",
+                                    channels: {
+                                        correctPercent: (d) => d.correctPercent + "%",
+                                        responseTime: (d) => d.responseTime + "s",
+                                        timesSeen: "timesSeen",
+                                    },
+                                    fill: "black"
+                                })),
+                            ]
+                        })
                     }
-                    this.chart = this.chart ?? new Chart(ctx, getChartConfig());
-                    window.appEvents = this.events;
+
+                    // timeSeriesResponseTimesPlot
+                    const getPlot2 = () => {
+                        const data = Object.values(this.stats.responseTimesPerProblem).flatMap(problem =>
+                            problem.submissions.map(s => ({
+                                name: problem.name, ...s, createdAt: new Date(s.createdAt), responseTimeS: s.responseTimeMs / 1000,
+                            })))
+                            .filter(it => it.isCorrect)
+                            .toSorted((a, b) => a.createdAt < b.createdAt ? -1 : 1)
+
+                        return Plot.plot({
+                            y: { nice: true },
+                            x: { nice: true },
+                            marks: [
+                                Plot.frame(),
+                                Plot.dotY(data, {
+                                    x: "createdAt",
+                                    y: "responseTimeS",
+                                    fill: "name",
+                                }),
+                                Plot.lineY(data, Plot.windowY({ k: data.length * 0.666 }, { x: "createdAt", y: "responseTimeS", stroke: "median", curve: "auto" })),
+                                Plot.tip(data, Plot.pointer({ x: "createdAt", y: "responseTimeS", fill: "black", channels: { problem: "name" } })),
+                            ]
+                        })
+                    }
+                    const div = document.getElementById("myplot");
+                    div?.firstChild?.remove();
+                    div.append(getPlot());
 
                     this.$watch('events', () => {
                         const responseTimesPerProblem = this.stats.responseTimesPerProblem
-                        console.log("updating chart", Date.now())
                         const labels = Object.keys(responseTimesPerProblem);
                         const d = Object.values(responseTimesPerProblem).map(problem => problem.average)
-                        this.chart.data.labels.forEach((it, i) => this.chart.data.labels[i] = labels[i])
-                        this.chart.data.datasets[0].data.forEach((it, i) => this.chart.data.datasets[0].data[i] = d[i])
+
+                        div?.firstChild?.remove();
+                        div?.append(getPlot())
+
+                        // this.chart.data.labels.forEach((it, i) => this.chart.data.labels[i] = labels[i])
+                        // this.chart.data.datasets[0].data.forEach((it, i) => this.chart.data.datasets[0].data[i] = d[i])
 
                         window.appEvents = this.events;
                         // TODO: for some reason this is throwing an error and not updating the chart
@@ -336,9 +432,10 @@
                     return {
                         normalizedResponseTime: Number.isNaN(average) ? 0 : bestResponseTime / average,
                         // convert to seconds and make it pretty
-                        responseTime: (average / 1000).toFixed(2),
+                        responseTime: Math.round((average / 1000) * 1e2) / 1e2,
                         correct,
                         incorrect,
+                        timesSeen: submissions.length,
                         correctPercent,
                     };
                 },
@@ -402,6 +499,15 @@
                 }
             };
         }
+
+        // TODO: figure out how to make these available without polluting the global namespace
+        window.withLRUCache = withLRUCache;
+        window.formatMsAsS = formatMsAsS;
+        window.evaluate = evaluate;
+        Alpine.data('timesTableApp', timesTableApp)
+
+        // NOTE: must be called only once and at the end
+        Alpine.start();
     </script>
 </body>
 
