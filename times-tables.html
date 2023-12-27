@@ -5,7 +5,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Times Table Practice</title>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
     <link rel="stylesheet" href="https://unpkg.com/mvp.css">
     <style>
@@ -46,7 +45,7 @@
     </header>
     <main>
         <div>
-            <button x-show="!started" @click="startGame()">Start</button>
+            <button x-text="started ? 'Pause' : 'Start'" @click="started ? pauseGame() : startGame()"></button>
             <div x-show="started">
                 <div>
                     <h2><strong>Question:</strong> <span x-text="`${a} ${op} ${b}`"></span></h2>
@@ -62,7 +61,8 @@
                     <p>Correct: <span x-text="stats.correctSubmissions.length"></span></p>
                     <p>Incorrect: <span x-text="stats.incorrectSubmissions.length"></span></p>
                     <p>Accuracy: <span x-text="stats.correctPercent.toFixed(2)"></span>%</p>
-                    <p>Average Response Time: <span x-text="(stats.averageResponseTimeMs / 1000).toFixed(2)"></span>s</p>
+                    <p>Average Response Time: <span x-text="(stats.averageResponseTimeMs / 1000).toFixed(2)"></span>s
+                    </p>
                 </div>
                 <h2>Stats</h2>
                 <select x-model="heatmapView">
@@ -158,11 +158,10 @@
 
         function timesTableApp() {
             return {
-                chart: null,
                 heatmapView: "responseTime", // correctPercent, responseTime, timesSeen
                 userAnswer: '',
                 started: false,
-                problemsInSet: Alpine.$persist(10),
+                problemsInSet: 10,
                 events: Alpine.$persist([]),
                 _cache: {},
 
@@ -340,6 +339,11 @@
 
                 init() {
                     window.appEvents = this.events;
+                    window.setEventHistory = (history) => {
+                        window.confirm("Are you sure you want to overwrite your event history? This will reset your stats and progress.")
+                        console.log("setting event history to:", history)
+                        this.events = history;
+                    }
                     const updateHeatmapFn = this.configureHeatmapPlot("heatmapPlot");
                     const updateTimeseriesFn = this.configureTimeSeriesPlot("timeseriesPlot")
 
@@ -355,23 +359,6 @@
                     });
                 },
 
-                getHeatmapCellStyle(stat, row, col) {
-                    const problem = this.calcProblemStats(`${row}*${col}`)
-                    let metric
-                    if (stat === 'correctPercent') {
-                        metric = 1 - (problem?.correctPercent ?? 100) * 0.01
-                    } else {
-                        metric = 0.5 - (problem?.normalizedResponseTime ?? 0.5)
-                    }
-                    // Use HSL for smoother color transitions
-                    const hue = (metric) * 120; // 0 (red) to 120 (green)
-                    const saturation = 70; // Full saturation
-                    const lightness = 50; // Normal lightness
-                    const backgroundColor = `hsl(${90 - hue}, ${saturation}%, ${lightness}%)`;
-
-                    return `background-color: ${backgroundColor};`;
-                },
-
                 calcProblemStats(problem, op, b) {
                     if (op !== undefined && b != undefined) {
                         return this.calcProblemStats(`${problem}${op}${b}`);
@@ -384,7 +371,7 @@
                     return {
                         normalizedResponseTime: Number.isNaN(average) ? 0 : bestResponseTime / average,
                         // convert to seconds and make it pretty
-                        responseTime: Math.round((average / 1000) * 1e2) / 1e2,
+                        responseTime: average === 0 ? undefined : Math.round((average / 1000) * 1e2) / 1e2,
                         correct,
                         incorrect,
                         timesSeen,
@@ -400,13 +387,16 @@
                     this.started = true;
                     this.generateProblem();
                 },
-                generateProblem() {
-                    if (this.problemsGenerated.length >= this.problemsInSet) {
-                        this.started = false;
-                        this.problemsInSet += 10;
-                        alert("You've completed the set! Congrats!")
-                        return;
+                pauseGame() {
+                    this.started = false;
+                    // remove any wrong answers
+                    while (this.events.length > 0 && this.events[this.events.length - 1].type === "SUBMIT") {
+                        this.events.pop();
                     }
+                    // remove the last generated question
+                    this.events.pop();
+                },
+                generateProblem() {
                     this.userAnswer = '';
                     const event = {
                         uuid: crypto.randomUUID(),
@@ -441,6 +431,11 @@
                     this.events.push(event);
 
                     if (isCorrect) {
+                        if (this.started && this.problemsGenerated.length % this.problemsInSet === 0) {
+                            this.started = false;
+                            alert("You've completed the set! Congrats!")
+                            return;
+                        }
                         this.generateProblem();
                     } else {
                         alert('Wrong answer, try again!');
