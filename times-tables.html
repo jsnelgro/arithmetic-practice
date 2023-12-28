@@ -4,61 +4,64 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Times Table Practice</title>
+    <title>Times Table</title>
 
-    <link rel="stylesheet" href="https://unpkg.com/mvp.css">
+    <!-- TODO: I should copy the styles from one of these and just maintain my own styling lib -->
+    <!-- <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/holiday.css@0.11.2" /> -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@exampledev/new.css@1/new.min.css">
+    <!-- <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@1/css/pico.min.css"> -->
+    <!-- <link rel="stylesheet" href="https://unpkg.com/mvp.css">  -->
+    <!-- <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/water.css@2/out/water.css"> -->
     <style>
         :root {
             --color-success: #009000;
             --color-error: #e70d0d;
+            --background-body: var(--nc-bg-1)
         }
 
         .row {
             display: flex;
+            justify-content: space-between;
         }
 
-        .heatmap {
-            display: flex;
-            flex-direction: column;
-            width: 600px;
-            text-align: center;
+        #heatmapPlot {
+            width: 50%;
         }
 
-        .heatmap-row {
-            display: flex;
-            flex-grow: 1;
+        #timeseriesPlot {
+            width: 50%;
         }
 
-        .heatmap-cell {
-            flex-grow: 1;
-            border: 1px solid #ddd;
-            width: 3rem;
-            height: 3rem;
+        svg.plot-d6a7b5 {
+            --plot-background: var(--background-body);
+            background: var(--plot-background);
         }
     </style>
 </head>
 
 <body x-data="timesTableApp">
     <header>
-        <nav>
-            <ul>
-            </ul>
-        </nav>
-
-        <h1>Times Table Practice</h1>
+        <h1>Times Tables</h1>
+        <!-- <button>⚙️</button> -->
     </header>
     <main>
+        <div x-show="started">
+            <div class="row">
+                <div> </div>
+                <div class="row">
+                    <h1><span x-text="`${a} ${op} ${b} =`"></span></h1>
+                    <input type="number" x-model="userAnswer" @keyup.enter="submitAnswer()" />
+                </div>
+                <button @click="submitAnswer()">Submit</button>
+            </div>
+        </div>
         <div>
             <button x-text="started ? 'Pause' : 'Start'" @click="started ? pauseGame() : startGame()"></button>
-            <label for="problemsInSet">Problems in Set:</label>
-            <input type="number" x-model="problemsInSet" />
-            <div x-show="started">
-                <div>
-                    <h2><strong>Question:</strong> <span x-text="`${a} ${op} ${b}`"></span></h2>
-                    <input type="number" x-model="userAnswer" @keyup.enter="submitAnswer()" />
-                    <button @click="submitAnswer()">Submit</button>
-                </div>
-            </div>
+            <details>
+                <summary>Options</summary>
+                <label for="problemsInSet">Problems in Set:</label>
+                <input type="number" x-model="problemsInSet" />
+            </details>
         </div>
         <div id="info_panel">
             <div>
@@ -259,6 +262,9 @@
 
                         return Plot.plot({
                             title: `Response Time Trend For ${this.highlightedProblem}`,
+                            // style: {
+                            //     background: "var(--background)",
+                            // },
                             y: { nice: true },
                             x: { nice: true },
                             marks: [
