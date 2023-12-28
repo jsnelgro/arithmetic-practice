@@ -13,6 +13,10 @@
             --color-error: #e70d0d;
         }
 
+        .row {
+            display: flex;
+        }
+
         .heatmap {
             display: flex;
             flex-direction: column;
@@ -46,6 +50,8 @@
     <main>
         <div>
             <button x-text="started ? 'Pause' : 'Start'" @click="started ? pauseGame() : startGame()"></button>
+            <label for="problemsInSet">Problems in Set:</label>
+            <input type="number" x-model="problemsInSet" />
             <div x-show="started">
                 <div>
                     <h2><strong>Question:</strong> <span x-text="`${a} ${op} ${b}`"></span></h2>
@@ -56,23 +62,24 @@
         </div>
         <div id="info_panel">
             <div>
-                <div>
-                    <h2>Overall Stats</h2>
+                <h2>Stats</h2>
+                <div class="row">
                     <p>Correct: <span x-text="stats.correctSubmissions.length"></span></p>
                     <p>Incorrect: <span x-text="stats.incorrectSubmissions.length"></span></p>
                     <p>Accuracy: <span x-text="stats.correctPercent.toFixed(2)"></span>%</p>
                     <p>Average Response Time: <span x-text="(stats.averageResponseTimeMs / 1000).toFixed(2)"></span>s
                     </p>
                 </div>
-                <h2>Stats</h2>
                 <select x-model="heatmapView">
                     <option value="responseTime">Select an option</option>
                     <option value="responseTime">Response Time</option>
                     <option value="correctPercent">Percent Correct</option>
                     <option value="timesSeen">Times Seen</option>
                 </select>
-                <div id="heatmapPlot"></div>
-                <div id="timeseriesPlot"></div>
+                <div style="display: flex;">
+                    <div id="heatmapPlot"></div>
+                    <div id="timeseriesPlot"></div>
+                </div>
 
                 <details open>
                     <summary>Events</summary>
@@ -160,6 +167,7 @@
             return {
                 heatmapView: "responseTime", // correctPercent, responseTime, timesSeen
                 userAnswer: '',
+                highlightedProblem: "1*1",
                 started: false,
                 problemsInSet: 10,
                 events: Alpine.$persist([]),
@@ -246,10 +254,11 @@
                             problem.submissions.map(s => ({
                                 name: problem.name, ...s, createdAt: new Date(s.createdAt), responseTimeS: s.responseTimeMs / 1000,
                             })))
-                            .filter(it => it.isCorrect)
+                            .filter(it => it.isCorrect && it.name === this.highlightedProblem)
                             .toSorted((a, b) => a.createdAt < b.createdAt ? -1 : 1)
 
                         return Plot.plot({
+                            title: `Response Time Trend For ${this.highlightedProblem}`,
                             y: { nice: true },
                             x: { nice: true },
                             marks: [
@@ -259,8 +268,8 @@
                                     y: "responseTimeS",
                                     fill: "name",
                                 }),
-                                Plot.lineY(data, Plot.windowY({ k: data.length * 0.666 }, { x: "createdAt", y: "responseTimeS", stroke: "median", curve: "auto" })),
-                                Plot.tip(data, Plot.pointer({ x: "createdAt", y: "responseTimeS", fill: "black", channels: { problem: "name" } })),
+                                Plot.lineY(data, Plot.windowY({ k: 2 }, { x: "createdAt", y: "responseTimeS", stroke: "median", curve: "auto" })),
+                                Plot.tip(data, Plot.pointer({ x: "createdAt", y: "responseTimeS", channels: { problem: "name" } })),
                             ]
                         })
                     }
@@ -281,7 +290,7 @@
                                 case "correctPercent":
                                     return { scheme: "RdYlGn", reverse: false, pivot: 75 }
                                 case "responseTime":
-                                    return { scheme: "RdYlGn", reverse: true, pivot: 3 }
+                                    return { scheme: "RdYlGn", reverse: true, pivot: 10 }
                                 default:
                                     return { scheme: "rdylbu", reverse: false }
                             }
@@ -304,15 +313,15 @@
                                 return { ...it, ...stats }
                             })
 
-                        return Plot.plot({
+                        const p = Plot.plot({
                             padding: 0,
                             aspectRatio: 1,
                             x: { axis: "top" },
                             color: computeColorOptions(),
                             marks: [
                                 Plot.frame(),
-                                Plot.cell(problems, { x: "a", stroke: "black", y: "b", fill: this.heatmapView }),
-                                Plot.text(problems, { x: "a", fill: "black", y: "b", text: (d) => computeText(d) }),
+                                Plot.cell(problems, { x: "a", y: "b", fill: this.heatmapView }),
+                                Plot.text(problems, { x: "a", y: "b", text: (d) => computeText(d) }),
                                 Plot.tip(problems, Plot.pointer({
                                     x: "a", y: "b",
                                     filter: (d) => d.timesSeen > 0,
@@ -321,10 +330,16 @@
                                         responseTime: (d) => d.responseTime + "s",
                                         timesSeen: "timesSeen",
                                     },
-                                    fill: "black"
                                 })),
                             ]
                         })
+
+                        p.addEventListener("input", (event) => {
+                            if (p?.value?.a === undefined) return;
+                            this.highlightedProblem = `${p.value.a}*${p.value.b}`;
+                        });
+
+                        return p
                     }
 
                     const div = document.getElementById(elId);
@@ -356,6 +371,10 @@
                         updateHeatmapFn();
                         updateTimeseriesFn();
                         window.appEvents = this.events;
+                    });
+
+                    this.$watch('highlightedProblem', () => {
+                        updateTimeseriesFn();
                     });
                 },
 
