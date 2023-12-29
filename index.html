@@ -421,7 +421,8 @@
                         const s = this.calcProblemStats(it.a, it.op, it.b)
                         const errorBasedWeight = 100 - ifNaN(s.correctPercent, 0)
                         const responseTimeBasedWeight = s.normalizedResponseTime * 100
-                        return errorBasedWeight + responseTimeBasedWeight
+                        const timesSeenBasedWeight = -s.timesSeen
+                        return errorBasedWeight + responseTimeBasedWeight + timesSeenBasedWeight
                     })
                     // sample from the problems based on the stats
                     return weightedRandomSample(problems, stats);
