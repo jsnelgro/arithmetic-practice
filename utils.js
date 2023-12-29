@@ -54,3 +54,28 @@ export function evaluate(a, b, op) {
             return a / b;
     }
 }
+
+export function ifNaN(a, b) {
+    return Number.isNaN(a) || a === undefined ? b : a;
+}
+
+export function weightedRandomSample(items, weights) {
+    const cumulativeWeights = [];
+    let totalWeight = 0;
+
+    weights.forEach(weight => {
+        totalWeight += weight;
+        cumulativeWeights.push(totalWeight);
+    })
+
+    const randomNumber = Math.random() * totalWeight;
+
+    for (let i = 0; i < items.length; i++) {
+        if (cumulativeWeights[i] >= randomNumber) {
+            return items[i];
+        }
+    }
+
+    console.error("weightedRandomSample: this should never happen");
+    return items[items.length - 1];
+}

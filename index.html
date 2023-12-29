@@ -161,7 +161,7 @@
         "use strict";
         import Alpine from 'https://cdn.jsdelivr.net/npm/alpinejs@3.13.3/+esm'
         import persist from 'https://cdn.jsdelivr.net/npm/@alpinejs/persist@3.13.3/+esm'
-        import { withGlobalCache, evaluate, formatMsAsS, expect } from './utils.js'
+        import { withGlobalCache, evaluate, formatMsAsS, expect, weightedRandomSample, ifNaN } from './utils.js'
         import { heatmapPlot, responseTimeTsPlot } from './plots.js'
         window.Alpine = Alpine
         Alpine.plugin(persist)
@@ -208,7 +208,7 @@
                 highlightedProblem: "1*1",
                 started: false,
                 problemsInSet: 10,
-                events: [], // Alpine.$persist([]).as(`${userStore.state.currentUser}-events`),
+                events: [],
                 get currentUser() {
                     return userStore.state.currentUser;
                 },
@@ -263,16 +263,16 @@
                             }
                         }, {});
 
-                        const bestResponseTime = Object.keys(responseTimesPerProblem).reduce((best, problem) => {
+                        const slowestResponseTime = Object.keys(responseTimesPerProblem).reduce((best, problem) => {
                             const submissions = responseTimesPerProblem[problem].submissions;
                             let average = submissions.reduce((sum, event) => sum + event.responseTimeMs, 0) / submissions.length;
                             // use 2hrs as a default
-                            average = Number.isNaN(average) ? 7_200_000 : average
+                            average = Number.isNaN(average) ? 0 : average
                             // NOTE: i know its bad but i'm mutating the object here b/c js sucks and its easier
                             responseTimesPerProblem[problem] = { ...responseTimesPerProblem[problem], average };
 
-                            return Math.min(best, average);
-                        }, 7_200_000);
+                            return Math.max(best, average);
+                        }, 0);
 
                         const res = {
                             correctSubmissions,
@@ -281,7 +281,7 @@
                             correctPercent,
                             averageResponseTimeMs,
                             responseTimesPerProblem,
-                            bestResponseTime,
+                            slowestResponseTime,
                         };
                         return res;
                     })
@@ -357,15 +357,15 @@
                     if (op !== undefined && b != undefined) {
                         return this.calcProblemStats(`${problem}${op}${b}`);
                     }
-                    const { bestResponseTime, responseTimesPerProblem } = this.stats
-                    const { submissions, average, timesSeen } = responseTimesPerProblem[problem] ?? { submissions: [], average: 0, timesSeen: 0 };
+                    const { slowestResponseTime, responseTimesPerProblem } = this.stats
+                    const { submissions, average, timesSeen } = responseTimesPerProblem[problem] ?? { submissions: [], average: undefined, timesSeen: 0 };
                     const correct = submissions.filter(event => event.isCorrect).length;
                     const incorrect = submissions.filter(event => !event.isCorrect).length;
                     const correctPercent = correct / submissions.length * 100;
                     return {
-                        normalizedResponseTime: Number.isNaN(average) ? 0 : bestResponseTime / average,
+                        normalizedResponseTime: ifNaN(average / slowestResponseTime, 1),
                         // convert to seconds and make it pretty
-                        responseTime: average === 0 ? undefined : Math.round((average / 1000) * 1e2) / 1e2,
+                        responseTime: ifNaN(Math.round((average / 1000) * 1e2) / 1e2, undefined),
                         correct,
                         incorrect,
                         timesSeen,
@@ -390,14 +390,55 @@
                     // remove the last generated question
                     this.events.pop();
                 },
+                // TODO: add support for other operators
+                generateAllProblems(minA = 1, maxA = 10, minB = 1, maxB = 10, operators = ["*"]) {
+                    const key = `allProblems-${minA}${maxA}${minB}${maxB}${operators.join("")}`
+                    return withGlobalCache(key, () => {
+                        const problems = [];
+                        for (let a = minA; a <= maxA; a++) {
+                            for (let b = minB; b <= maxB; b++) {
+                                for (const op of operators) {
+                                    problems.push({ a, op, b });
+                                }
+                            }
+                        }
+                        return problems;
+                    })
+                },
+                sampleProblem() {
+                    // TODO: add option to toggle between random and weighted random
+                    if (false) {
+                        return {
+                            a: Math.floor(Math.random() * 10) + 1,
+                            b: Math.floor(Math.random() * 10) + 1,
+                            op: "*",
+                        };
+                    }
+                    // generate all possible problems
+                    const problems = this.generateAllProblems();
+                    // fetch the stats for each problem
+                    const stats = problems.map(it => {
+                        const s = this.calcProblemStats(it.a, it.op, it.b)
+                        const errorBasedWeight = 100 - ifNaN(s.correctPercent, 0)
+                        const responseTimeBasedWeight = s.normalizedResponseTime * 100
+                        return errorBasedWeight + responseTimeBasedWeight
+                    })
+                    // sample from the problems based on the stats
+                    return weightedRandomSample(problems, stats);
+                },
+
                 generateProblem() {
                     this.userAnswer = '';
+                    // pick problems that are more likely to be unseen, incorrect, or slow
+                    // i.e. more likely to pick problems you're having trouble with
+                    const { a, op, b } = this.sampleProblem();
+
                     const event = {
                         uuid: crypto.randomUUID(),
                         type: "GENERATE",
-                        a: Math.floor(Math.random() * 10) + 1,
-                        b: Math.floor(Math.random() * 10) + 1,
-                        op: "*",
+                        a,
+                        b,
+                        op,
                         createdAt: Date.now(),
                     };
                     this.events.push(event);
