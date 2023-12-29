@@ -28,6 +28,7 @@ export const heatmapPlot = (heatmapView, calcProblemStats, setHighlightedProblem
             const stats = calcProblemStats(`${it.a}*${it.b}`)
             return { ...it, ...stats }
         })
+        .filter(it => (it?.responseTime ?? 0) < 10) // filter outliers (problems that took more than 10 seconds)
 
     const p = Plot.plot({
         padding: 0,
@@ -68,6 +69,7 @@ export const responseTimeTsPlot = (stats, highlightedProblem) => {
             responseTimeS: s.responseTimeMs / 1000,
         })))
         .filter(it => it.isCorrect && it.name === highlightedProblem)
+        .filter(it => (it?.responseTimeS ?? 0) < 10) // filter outliers (problems that took more than 10 seconds)
         .toSorted((a, b) => a.createdAt < b.createdAt ? -1 : 1)
 
     const metric = "responseTimeS" // "responseTimeS"
