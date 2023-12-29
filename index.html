@@ -53,7 +53,6 @@
         <h1>Times Tables</h1>
         <div x-data="{ selectedOption: $store.userStore.state.currentUser }"
             x-init="$watch('$store.userStore.state', v => (selectedOption = v.currentUser))">
-            <!-- x-effect="$store.userStore.setCurrentUser(ev.target.value)" -->
             <select x-model="selectedOption" @change="ev => $store.userStore.setCurrentUser(ev.target.value)">
                 <template x-for="user in $store.userStore.state.users" :key="user.name">
                     <option :selected="user.name === selectedOption" x-text="user.name" :value="user.name"></option>
@@ -70,7 +69,8 @@
                 this.newUserName = '';
             },
         }">
-            <button @click="() => showDialog = !showDialog; $nextTick(() => $refs.newUserInput.focus());">New User</button>
+            <button @click="() => showDialog = !showDialog; $nextTick(() => $refs.newUserInput.focus());">New
+                User</button>
             <dialog :open="showDialog">
                 <p>New User</p>
                 <input x-ref="newUserInput" x-model="newUserName" type="text" @keyup.enter="submitNewUser" />
@@ -86,13 +86,20 @@
                 <div> </div>
                 <div class="row">
                     <h1><span x-text="`${a} ${op} ${b} =`"></span></h1>
-                    <input type="number" x-model="userAnswer" @keyup.enter="submitAnswer()" />
+                    <input x-ref="submissionInput" type="number" x-model="userAnswer" @keyup.enter="submitAnswer()" />
                 </div>
                 <button @click="submitAnswer()">Submit</button>
             </div>
         </div>
         <div>
-            <button x-text="started ? 'Pause' : 'Start'" @click="started ? pauseGame() : startGame()"></button>
+            <button x-text="started ? 'Pause' : 'Start'" @click="() => {
+                if (started) {
+                    pauseGame();
+                    return;
+                }
+                startGame();
+                $nextTick(() => $refs.submissionInput.focus());
+            }"></button>
             <details>
                 <summary>Options</summary>
                 <label for="problemsInSet">Problems in Set:</label>
@@ -433,13 +440,10 @@
 
         // TODO: figure out how to make these available to the template without polluting the global namespace
         // could put them in a global "utils" or "app" object at least...
-        // window.withLRUCache = withLRUCache;
         window.formatMsAsS = formatMsAsS;
-        // window.evaluate = evaluate;
 
         document.addEventListener('alpine:init', () => {
             Alpine.store("userStore", userStoreOf())
-
             Alpine.data("app", () => timesTableApp(Alpine.store("userStore")))
         })
 
