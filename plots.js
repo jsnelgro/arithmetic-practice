@@ -28,7 +28,6 @@ export const heatmapPlot = (heatmapView, calcProblemStats, setHighlightedProblem
             const stats = calcProblemStats(`${it.a}*${it.b}`)
             return { ...it, ...stats }
         })
-        .filter(it => (it?.responseTime ?? 0) < 10) // filter outliers (problems that took more than 10 seconds)
 
     const p = Plot.plot({
         padding: 0,
