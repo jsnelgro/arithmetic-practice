@@ -36,13 +36,49 @@
             --plot-background: var(--background-body);
             background: var(--plot-background);
         }
+
+        dialog {
+            color: inherit;
+            margin: 2rem 1.5rem;
+            padding: .6rem 1rem;
+            border: 1px solid var(--nc-bg-3);
+            background: var(--nc-bg-2);
+            border-radius: 4px;
+        }
     </style>
 </head>
 
-<body x-data="timesTableApp">
+<body x-data="app">
     <header>
         <h1>Times Tables</h1>
-        <!-- <button>⚙️</button> -->
+        <div x-data="{ selectedOption: $store.userStore.state.currentUser }"
+            x-init="$watch('$store.userStore.state', v => (selectedOption = v.currentUser))">
+            <!-- x-effect="$store.userStore.setCurrentUser(ev.target.value)" -->
+            <select x-model="selectedOption" @change="ev => $store.userStore.setCurrentUser(ev.target.value)">
+                <template x-for="user in $store.userStore.state.users" :key="user.name">
+                    <option :selected="user.name === selectedOption" x-text="user.name" :value="user.name"></option>
+                </template>
+            </select>
+        </div>
+        <div x-data="{
+            showDialog: false,
+            newUserName: '',
+            submitNewUser() {
+                $store.userStore.createUser(this.newUserName);
+                $store.userStore.setCurrentUser(this.newUserName);
+                this.showDialog = false;
+                this.newUserName = '';
+            },
+        }">
+            <button @click="() => showDialog = !showDialog; $nextTick(() => $refs.newUserInput.focus());">New User</button>
+            <dialog :open="showDialog">
+                <p>New User</p>
+                <input x-ref="newUserInput" x-model="newUserName" type="text" @keyup.enter="submitNewUser" />
+                <button @click="submitNewUser">
+                    Create
+                </button>
+            </dialog>
+        </div>
     </header>
     <main>
         <div x-show="started">
@@ -113,71 +149,64 @@
             </div>
     </main>
 
+
     <script type="module">
+        "use strict";
         import Alpine from 'https://cdn.jsdelivr.net/npm/alpinejs@3.13.3/+esm'
         import persist from 'https://cdn.jsdelivr.net/npm/@alpinejs/persist@3.13.3/+esm'
-        import * as Plot from "https://cdn.jsdelivr.net/npm/@observablehq/plot@0.6/+esm";
+        import { withGlobalCache, evaluate, formatMsAsS, expect } from './utils.js'
+        import { heatmapPlot, responseTimeTsPlot } from './plots.js'
         window.Alpine = Alpine
         Alpine.plugin(persist)
 
-        function withLRUCache(store, key, fn, maxSize = 100) {
-            // Ensure the key is a string, throw an error otherwise
-            // make sure the key is a string so iteration is via insertion order
-            if (typeof key !== 'string') {
-                throw new Error('withLRUCache: Key must be a string to ensure proper cache behavior.');
-            }
+        function userStoreOf() {
+            return {
+                // state
+                events: Alpine.$persist([]).as("userStoreEvents"),
 
-            // if the key is already in the cache, move it to the "front"
-            if (store[key]) {
-                // kinda hacky since it relies on the fact that ecmascript's Object.keys
-                // returns an iterator based on insertion order for string keys
-                const value = store[key];
-                delete store[key];
-                store[key] = value;
-                return value;
-            }
-            const res = fn(); // cache miss, compute the value
+                // computed
+                get state() {
+                    return withGlobalCache(`userStore-${this.events.length}`, () => {
+                        return this.events.reduce((s, event) => {
+                            switch (event.type) {
+                                case "CREATE_USER":
+                                    return { ...s, users: { ...s.users, [event.name]: { name: event.name } } }
+                                case "SET_CURRENT_USER":
+                                    return { ...s, currentUser: event.name }
+                                default:
+                                    return s;
+                            }
+                        }, { users: { anonymous: { name: 'anonymous' } }, currentUser: 'anonymous' })
+                    })
+                },
 
-            // if the cache is full, remove the last item
-            const keys = Object.keys(store)
-            if (keys.length >= maxSize) {
-                const lastKey = keys[keys.length - 1];
-                delete store[lastKey];
-            }
-            store[key] = res;
-            return res;
-        }
+                // actions
+                createUser(name) {
+                    expect(typeof name === 'string', "name must be a string")
+                    expect(!this.state.users[name], `User with name ${name} already exists!`)
+                    this.events.push({ type: "CREATE_USER", name })
 
-        function formatMsAsS(ms) {
-            const res = (ms / 1000)
-            return Number.isNaN(res) ? undefined : res.toFixed(2) + "s";
-        }
-
-        function evaluate(a, b, op) {
-            switch (op) {
-                case '+':
-                    return a + b;
-                case '-':
-                    return a - b;
-                case '*':
-                    return a * b;
-                case '/':
-                    return a / b;
+                },
+                setCurrentUser(name) {
+                    expect(this.state.users[name], `No user with name ${name} exists!`)
+                    this.events.push({ type: "SET_CURRENT_USER", name })
+                }
             }
         }
 
-        function timesTableApp() {
+        function timesTableApp(userStore) {
             return {
                 heatmapView: "responseTime", // correctPercent, responseTime, timesSeen
                 userAnswer: '',
                 highlightedProblem: "1*1",
                 started: false,
                 problemsInSet: 10,
-                events: Alpine.$persist([]),
-                _cache: {},
-
+                events: [], // Alpine.$persist([]).as(`${userStore.state.currentUser}-events`),
+                get currentUser() {
+                    return userStore.state.currentUser;
+                },
                 get currentProblem() {
-                    return withLRUCache(this._cache, `currentProblem-${this.events.length}`, () => {
+                    return withGlobalCache(`currentProblem-${this.events.length}`, () => {
                         // find the last event that was a GENERATE event and return it
                         for (let i = this.events.length - 1; i >= 0; i--) {
                             const event = this.events[i];
@@ -194,13 +223,13 @@
                 get op() { return this.currentProblem?.op },
 
                 get problemsGenerated() {
-                    return withLRUCache(this._cache, `problemsGenerated-${this.events.length}`, () => {
+                    return withGlobalCache(`problemsGenerated-${this.events.length}`, () => {
                         return this.events.filter(event => event.type === "GENERATE");;
                     })
                 },
 
                 get stats() {
-                    return withLRUCache(this._cache, `stats-${this.events.length}`, () => {
+                    return withGlobalCache(`stats-${this.events.length}`, () => {
                         const correctSubmissions = this.events.filter(event => event.type === "SUBMIT" && event.isCorrect);
                         const incorrectSubmissions = this.events.filter(event => event.type === "SUBMIT" && !event.isCorrect);
                         const totalSubmissions = correctSubmissions.length + incorrectSubmissions.length;
@@ -251,113 +280,6 @@
                     })
                 },
 
-                configureTimeSeriesPlot(elId) {
-                    const getPlot = () => {
-                        const data = Object.values(this.stats.responseTimesPerProblem).flatMap(problem =>
-                            problem.submissions.map(s => ({
-                                name: problem.name, ...s, createdAt: new Date(s.createdAt), responseTimeS: s.responseTimeMs / 1000,
-                            })))
-                            .filter(it => it.isCorrect && it.name === this.highlightedProblem)
-                            .toSorted((a, b) => a.createdAt < b.createdAt ? -1 : 1)
-
-                        return Plot.plot({
-                            title: `Response Time Trend For ${this.highlightedProblem}`,
-                            // style: {
-                            //     background: "var(--background)",
-                            // },
-                            y: { nice: true },
-                            x: { nice: true },
-                            marks: [
-                                Plot.frame(),
-                                Plot.dotY(data, {
-                                    x: "createdAt",
-                                    y: "responseTimeS",
-                                    fill: "name",
-                                }),
-                                Plot.lineY(data, Plot.windowY({ k: 2 }, { x: "createdAt", y: "responseTimeS", stroke: "median", curve: "auto" })),
-                                Plot.tip(data, Plot.pointer({ x: "createdAt", y: "responseTimeS", channels: { problem: "name" } })),
-                            ]
-                        })
-                    }
-                    const div = document.getElementById(elId);
-                    div?.firstChild?.remove();
-                    div.append(getPlot());
-
-                    return () => {
-                        div?.firstChild?.remove();
-                        div?.append(getPlot())
-                    }
-                },
-
-                configureHeatmapPlot(elId) {
-                    const getPlot = () => {
-                        const computeColorOptions = () => {
-                            switch (this.heatmapView) {
-                                case "correctPercent":
-                                    return { scheme: "RdYlGn", reverse: false, pivot: 75 }
-                                case "responseTime":
-                                    return { scheme: "RdYlGn", reverse: true, pivot: 10 }
-                                default:
-                                    return { scheme: "rdylbu", reverse: false }
-                            }
-                        }
-
-                        const computeText = (d) => {
-                            switch (this.heatmapView) {
-                                case "correctPercent":
-                                    return d.correctPercent ? d.correctPercent.toFixed(1) + "%" : undefined
-                                case "responseTime":
-                                    return d.responseTime ? d.responseTime + "s" : undefined
-                                default:
-                                    return d[this.heatmapView] ?? undefined
-                            }
-                        }
-                        const problems = Array(10).fill(0)
-                            .flatMap((_, i) => Array(10).fill(0).map((_, j) => ({ a: i + 1, b: j + 1 })))
-                            .map(it => {
-                                const stats = this.calcProblemStats(`${it.a}*${it.b}`)
-                                return { ...it, ...stats }
-                            })
-
-                        const p = Plot.plot({
-                            padding: 0,
-                            aspectRatio: 1,
-                            x: { axis: "top" },
-                            color: computeColorOptions(),
-                            marks: [
-                                Plot.frame(),
-                                Plot.cell(problems, { x: "a", y: "b", fill: this.heatmapView }),
-                                Plot.text(problems, { x: "a", y: "b", text: (d) => computeText(d) }),
-                                Plot.tip(problems, Plot.pointer({
-                                    x: "a", y: "b",
-                                    filter: (d) => d.timesSeen > 0,
-                                    channels: {
-                                        correctPercent: (d) => d.correctPercent + "%",
-                                        responseTime: (d) => d.responseTime + "s",
-                                        timesSeen: "timesSeen",
-                                    },
-                                })),
-                            ]
-                        })
-
-                        p.addEventListener("input", (event) => {
-                            if (p?.value?.a === undefined) return;
-                            this.highlightedProblem = `${p.value.a}*${p.value.b}`;
-                        });
-
-                        return p
-                    }
-
-                    const div = document.getElementById(elId);
-                    div?.firstChild?.remove();
-                    div.append(getPlot());
-
-                    return () => {
-                        div?.firstChild?.remove();
-                        div?.append(getPlot())
-                    }
-                },
-
                 init() {
                     window.appEvents = this.events;
                     window.setEventHistory = (history) => {
@@ -374,6 +296,8 @@
                     });
 
                     this.$watch('events', () => {
+                        // Alpine.$persist isn't quite flexible enough so we need to do this manually
+                        window.localStorage[`${this.currentUser}-events`] = JSON.stringify(this.events)
                         updateHeatmapFn();
                         updateTimeseriesFn();
                         window.appEvents = this.events;
@@ -382,6 +306,44 @@
                     this.$watch('highlightedProblem', () => {
                         updateTimeseriesFn();
                     });
+
+                    const evs = window.localStorage[`${this.currentUser}-events`] ?? "[]"
+                    this.events = JSON.parse(evs)
+                    this.$watch("currentUser", () => {
+                        const evs = window.localStorage[`${this.currentUser}-events`] ?? "[]"
+                        this.events = JSON.parse(evs)
+                        // clear app cache in case users have same number of events
+                        window._appCache = {}
+                    })
+                },
+
+                configureTimeSeriesPlot(elId) {
+                    const getPlot = () => responseTimeTsPlot(this.stats, this.highlightedProblem)
+                    const div = document.getElementById(elId);
+                    div?.firstChild?.remove();
+                    div.append(getPlot());
+
+                    return () => {
+                        div?.firstChild?.remove();
+                        div?.append(getPlot())
+                    }
+                },
+
+                configureHeatmapPlot(elId) {
+                    const getPlot = () => heatmapPlot(
+                        this.heatmapView,
+                        (k) => this.calcProblemStats(k),
+                        (k) => { this.highlightedProblem = k }
+                    )
+
+                    const div = document.getElementById(elId);
+                    div?.firstChild?.remove();
+                    div.append(getPlot());
+
+                    return () => {
+                        div?.firstChild?.remove();
+                        div?.append(getPlot())
+                    }
                 },
 
                 calcProblemStats(problem, op, b) {
@@ -465,18 +427,21 @@
                     } else {
                         alert('Wrong answer, try again!');
                     }
-                },
-                eventString(event) {
-                    return `${new Date(event.createdAt).toISOString()}: ${event.type} ${event.a} ${event.op} ${event.b} ${(event?.responseTimeMs && event.responseTimeMs / 1000 + "s") ?? ""}`;
                 }
             };
         }
 
-        // TODO: figure out how to make these available without polluting the global namespace
-        window.withLRUCache = withLRUCache;
+        // TODO: figure out how to make these available to the template without polluting the global namespace
+        // could put them in a global "utils" or "app" object at least...
+        // window.withLRUCache = withLRUCache;
         window.formatMsAsS = formatMsAsS;
-        window.evaluate = evaluate;
-        Alpine.data('timesTableApp', timesTableApp)
+        // window.evaluate = evaluate;
+
+        document.addEventListener('alpine:init', () => {
+            Alpine.store("userStore", userStoreOf())
+
+            Alpine.data("app", () => timesTableApp(Alpine.store("userStore")))
+        })
 
         // NOTE: must be called only once and at the end
         Alpine.start();
