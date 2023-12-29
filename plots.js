@@ -6,7 +6,7 @@ export const heatmapPlot = (heatmapView, calcProblemStats, setHighlightedProblem
             case "correctPercent":
                 return { scheme: "RdYlGn", reverse: false, pivot: 75 }
             case "responseTime":
-                return { scheme: "RdYlGn", reverse: true, pivot: 10 }
+                return { scheme: "RdYlGn", reverse: true, pivot: 4 }
             default:
                 return { scheme: "rdylbu", reverse: false }
         }
@@ -62,10 +62,15 @@ export const heatmapPlot = (heatmapView, calcProblemStats, setHighlightedProblem
 export const responseTimeTsPlot = (stats, highlightedProblem) => {
     const data = Object.values(stats.responseTimesPerProblem).flatMap(problem =>
         problem.submissions.map(s => ({
-            name: problem.name, ...s, createdAt: new Date(s.createdAt), responseTimeS: s.responseTimeMs / 1000,
+            name: problem.name,
+            ...s,
+            createdAt: new Date(s.createdAt),
+            responseTimeS: s.responseTimeMs / 1000,
         })))
         .filter(it => it.isCorrect && it.name === highlightedProblem)
         .toSorted((a, b) => a.createdAt < b.createdAt ? -1 : 1)
+
+    const metric = "responseTimeS" // "responseTimeS"
 
     return Plot.plot({
         title: `Response Time Trend For ${highlightedProblem}`,
@@ -75,11 +80,11 @@ export const responseTimeTsPlot = (stats, highlightedProblem) => {
             Plot.frame(),
             Plot.dotY(data, {
                 x: "createdAt",
-                y: "responseTimeS",
+                y:  metric,
                 fill: "name",
             }),
-            Plot.lineY(data, Plot.windowY({ k: 2 }, { x: "createdAt", y: "responseTimeS", stroke: "median", curve: "auto" })),
-            Plot.tip(data, Plot.pointer({ x: "createdAt", y: "responseTimeS", channels: { problem: "name" } })),
+            Plot.lineY(data, Plot.windowY({ k: 2 }, { x: "createdAt", y: metric, stroke: "median", curve: "auto" })),
+            Plot.tip(data, Plot.pointer({ x: "createdAt", y: metric, channels: { problem: "name" } })),
         ]
     })
 }
