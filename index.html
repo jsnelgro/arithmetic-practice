@@ -38,6 +38,7 @@
 
         dialog {
             z-index: 9;
+
             &>div {
                 display: flex;
                 justify-content: end;
@@ -158,9 +159,10 @@
         <div class="game-area" x-show="started">
             <h1>
                 <span x-text="`${a} ${op} ${b} =`"></span>
-                <input x-ref="submissionInput" type="number" x-model="userAnswer" @keyup.enter="submitAnswer()" />
+                <input x-ref="submissionInput" type="number" x-model="userAnswer"
+                    @keyup.enter="() => {submitAnswer(); $nextTick(() => $refs.submissionInput.focus());}" />
             </h1>
-            <button @click="submitAnswer()">Submit</button>
+            <button @click="() => {submitAnswer(); $nextTick(() => $refs.submissionInput.focus());}">Submit</button>
             <hr />
             <div style="display: flex; justify-content: end;">
                 <a href="#" @click="started && pauseGame()">Stop</a>
