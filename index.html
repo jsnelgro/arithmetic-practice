@@ -7,8 +7,9 @@
     <title>Times Table</title>
 
     <!-- TODO: I should copy the styles from one of these and just maintain my own styling lib -->
+    <link rel="stylesheet" href="simple.css" />
     <!-- <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/holiday.css@0.11.2" /> -->
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@exampledev/new.css@1/new.min.css">
+    <!-- <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@exampledev/new.css@1/new.min.css"> -->
     <!-- <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@1/css/pico.min.css"> -->
     <!-- <link rel="stylesheet" href="https://unpkg.com/mvp.css">  -->
     <!-- <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/water.css@2/out/water.css"> -->
@@ -24,26 +25,85 @@
             justify-content: space-between;
         }
 
-        #heatmapPlot {
-            width: 50%;
-        }
-
         #timeseriesPlot {
-            width: 50%;
+            & h2 {
+                font-size: 0.5rem;
+            }
         }
 
         svg.plot-d6a7b5 {
-            --plot-background: var(--background-body);
+            --plot-background: var(--bg);
             background: var(--plot-background);
         }
 
         dialog {
-            color: inherit;
-            margin: 2rem 1.5rem;
-            padding: .6rem 1rem;
-            border: 1px solid var(--nc-bg-3);
-            background: var(--nc-bg-2);
-            border-radius: 4px;
+            z-index: 9;
+            &>div {
+                display: flex;
+                justify-content: end;
+                width: 100%;
+            }
+        }
+
+        .big-stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(75px, 1fr));
+            gap: 0.5rem;
+            margin-bottom: 2rem;
+
+            &>div {
+                text-align: center;
+
+                &>span {
+                    font-size: larger;
+                }
+
+                &>b {
+                    display: block;
+                    font-size: 35%;
+                }
+            }
+        }
+
+        body>header {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            align-items: center;
+            padding: 1rem;
+        }
+
+        .start-btn-wrap {
+            display: grid;
+            grid-auto-rows: 75px;
+            padding: 1rem;
+        }
+
+        .game-area {
+            background: var(--accent-bg);
+            padding: 2rem;
+            border-radius: var(--border-radius);
+            border: var(--border);
+            text-align: center;
+
+            &>h1 {
+                &>input {
+                    width: 25%;
+                }
+            }
+        }
+
+        .plots {
+            display: grid;
+            justify-items: center;
+        }
+
+        .header-right {
+            display: grid;
+            justify-content: right;
+
+            &>div>button {
+                width: 100%;
+            }
         }
     </style>
 </head>
@@ -51,15 +111,17 @@
 <body x-data="app">
     <header>
         <h1>Times Tables</h1>
-        <div x-data="{ selectedOption: $store.userStore.state.currentUser }"
-            x-init="$watch('$store.userStore.state', v => (selectedOption = v.currentUser))">
-            <select x-model="selectedOption" @change="ev => $store.userStore.setCurrentUser(ev.target.value)">
-                <template x-for="user in $store.userStore.state.users" :key="user.name">
-                    <option :selected="user.name === selectedOption" x-text="user.name" :value="user.name"></option>
-                </template>
-            </select>
-        </div>
-        <div x-data="{
+        <br />
+        <div class="header-right">
+            <div x-data="{ selectedOption: $store.userStore.state.currentUser }"
+                x-init="$watch('$store.userStore.state', v => (selectedOption = v.currentUser))">
+                <select x-model="selectedOption" @change="ev => $store.userStore.setCurrentUser(ev.target.value)">
+                    <template x-for="user in $store.userStore.state.users" :key="user.name">
+                        <option :selected="user.name === selectedOption" x-text="user.name" :value="user.name"></option>
+                    </template>
+                </select>
+            </div>
+            <div x-data="{
             showDialog: false,
             newUserName: '',
             submitNewUser() {
@@ -69,91 +131,95 @@
                 this.newUserName = '';
             },
         }">
-            <button @click="() => showDialog = !showDialog; $nextTick(() => $refs.newUserInput.focus());">New
-                User</button>
-            <dialog :open="showDialog">
-                <p>New User</p>
-                <input x-ref="newUserInput" x-model="newUserName" type="text" @keyup.enter="submitNewUser" />
-                <button @click="submitNewUser">
-                    Create
+                <button @click="() => showDialog = !showDialog; $nextTick(() => $refs.newUserInput.focus());">
+                    Settings
                 </button>
-            </dialog>
+                <dialog :open="showDialog">
+                    <div>
+                        <button @click="showDialog = false">x</button>
+                    </div>
+                    <h2>Settings</h2>
+                    <section>
+                        <p>
+                            <label for="problemsInSet">Problems in Set:</label>
+                            <input type="number" x-model="problemsInSet" />
+                        </p>
+                    </section>
+                    <section>
+                        <label>Create New User</label>
+                        <input x-ref="newUserInput" x-model="newUserName" type="text" @keyup.enter="submitNewUser" />
+                        <button @click="submitNewUser">Create</button>
+                    </section>
+                </dialog>
+            </div>
         </div>
     </header>
     <main>
-        <div x-show="started">
-            <div class="row">
-                <div> </div>
-                <div class="row">
-                    <h1><span x-text="`${a} ${op} ${b} =`"></span></h1>
-                    <input x-ref="submissionInput" type="number" x-model="userAnswer" @keyup.enter="submitAnswer()" />
-                </div>
-                <button @click="submitAnswer()">Submit</button>
+        <div class="game-area" x-show="started">
+            <h1>
+                <span x-text="`${a} ${op} ${b} =`"></span>
+                <input x-ref="submissionInput" type="number" x-model="userAnswer" @keyup.enter="submitAnswer()" />
+            </h1>
+            <button @click="submitAnswer()">Submit</button>
+            <hr />
+            <div style="display: flex; justify-content: end;">
+                <a href="#" @click="started && pauseGame()">Stop</a>
             </div>
         </div>
-        <div>
-            <button x-text="started ? 'Pause' : 'Start'" @click="() => {
-                if (started) {
-                    pauseGame();
-                    return;
-                }
+        <div x-show="!started" class="start-btn-wrap">
+            <button @click="() => {
                 startGame();
                 $nextTick(() => $refs.submissionInput.focus());
-            }"></button>
-            <details>
-                <summary>Options</summary>
-                <label for="problemsInSet">Problems in Set:</label>
-                <input type="number" x-model="problemsInSet" />
-            </details>
+            }">Start</button>
         </div>
         <div id="info_panel">
-            <div>
-                <h2>Stats</h2>
-                <div class="row">
-                    <p>Correct: <span x-text="stats.correctSubmissions.length"></span></p>
-                    <p>Incorrect: <span x-text="stats.incorrectSubmissions.length"></span></p>
-                    <p>Accuracy: <span x-text="stats.correctPercent.toFixed(2)"></span>%</p>
-                    <p>Average Response Time: <span x-text="(stats.averageResponseTimeMs / 1000).toFixed(2)"></span>s
-                    </p>
+            <div class="big-stats">
+                <div><span x-text="stats.correctSubmissions.length"></span><b>Correct</b></div>
+                <div><span x-text="stats.incorrectSubmissions.length"></span><b>Incorrect</b></div>
+                <div><span x-text="stats.correctPercent.toFixed(0) + '%'"></span><b>Accuracy</b></div>
+                <div>
+                    <span x-text="(stats.averageResponseTimeMs / 1000).toFixed(2) + 's'"></span>
+                    <b>Avg Response Time</b>
                 </div>
+            </div>
+            <div class="plots">
                 <select x-model="heatmapView">
                     <option value="responseTime">Select an option</option>
                     <option value="responseTime">Response Time</option>
                     <option value="correctPercent">Percent Correct</option>
                     <option value="timesSeen">Times Seen</option>
                 </select>
-                <div style="display: flex;">
-                    <div id="heatmapPlot"></div>
-                    <div id="timeseriesPlot"></div>
-                </div>
-
-                <details open>
-                    <summary>Events</summary>
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>Time</th>
-                                <th>Event</th>
-                                <th>Problem</th>
-                                <th>User Answer</th>
-                                <th>Response Time</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <template x-for="event in events" :key="event.uuid">
-                                <tr>
-                                    <td x-text="new Date(event.createdAt).toISOString()"></td>
-                                    <td x-text="event.type"></td>
-                                    <td x-text="event.a + event.op + event.b"></td>
-                                    <td :style='{ color: event.isCorrect ? "var(--color-success)" : "var(--color-error)" }'
-                                        x-text="event.userAnswer"></td>
-                                    <td x-text="formatMsAsS(event.responseTimeMs)"></td>
-                                </tr>
-                            </template>
-                        </tbody>
-                    </table>
-                </details>
+                <div id="timeseriesPlot"></div>
+                <div id="heatmapPlot"></div>
             </div>
+
+            <details open>
+                <summary>Events</summary>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Time</th>
+                            <th>Event</th>
+                            <th>Problem</th>
+                            <th>User Answer</th>
+                            <th>Response Time</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <template x-for="event in events" :key="event.uuid">
+                            <tr>
+                                <td x-text="new Date(event.createdAt).toISOString()"></td>
+                                <td x-text="event.type"></td>
+                                <td x-text="event.a + event.op + event.b"></td>
+                                <td :style='{ color: event.isCorrect ? "var(--color-success)" : "var(--color-error)" }'
+                                    x-text="event.userAnswer"></td>
+                                <td x-text="formatMsAsS(event.responseTimeMs)"></td>
+                            </tr>
+                        </template>
+                    </tbody>
+                </table>
+            </details>
+        </div>
     </main>
 
 

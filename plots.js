@@ -74,9 +74,11 @@ export const responseTimeTsPlot = (stats, highlightedProblem) => {
     const metric = "responseTimeS" // "responseTimeS"
 
     return Plot.plot({
-        title: `Response Time Trend For ${highlightedProblem}`,
-        y: { nice: true },
+        // title: `Response Time Trend For ${highlightedProblem}`,
         x: { nice: true },
+        y: { nice: true },
+        height: 200,
+        grid: true,
         marks: [
             Plot.frame(),
             Plot.dotY(data, {
